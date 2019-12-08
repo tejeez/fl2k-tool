@@ -2,16 +2,21 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
+#include <math.h>
 #include <osmo-fl2k.h>
 
 #define FAIL(...) { fprintf(stderr, __VA_ARGS__); goto end; }
 #define INFO(...) { fprintf(stderr, __VA_ARGS__); }
 
+#define SINE_SHIFT 10
+#define SINE_SIZE (1<<SINE_SHIFT)
+
 struct transmitter {
 	uint32_t fs; // Sample rate
+	char initialized;
 	int8_t *buf; // Buffer, allocated at init
 	uint64_t phase, freq; // Oscillator phase and frequency
-	char initialized;
+	int8_t sine[SINE_SIZE];
 };
 
 void tx_init(struct transmitter *tx)
@@ -20,6 +25,11 @@ void tx_init(struct transmitter *tx)
 	tx->buf = malloc(FL2K_BUF_LEN * sizeof(&tx->buf));
 	tx->phase = 0;
 	tx->freq = 1e6 / (double)tx->fs * ((double)(1ULL<<63) * 2.0);
+
+	int i;
+	for (i = 0; i < SINE_SIZE; i++) {
+		tx->sine[i] = 127.0 * sin(6.283185307179586 * i / SINE_SIZE);
+	}
 	//INFO("TX freq: %llu\n", (long long unsigned)tx->freq);
 	tx->initialized = 1;
 }
@@ -36,7 +46,8 @@ void tx_callback(fl2k_data_info_t *fldata)
 
 	for (i = 0; i < bl; i++) {
 		tx->phase += tx->freq;
-		*b++ = tx->phase >> (64-8);
+		*b++ = tx->sine[tx->phase >> (64-SINE_SHIFT)];
+		tx->freq += 1000000000; // test sweeping
 	}
 
 	fldata->sampletype_signed = 1;
